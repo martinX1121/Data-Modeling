@@ -1,0 +1,167 @@
+---
+title: "ECON 6086-Final Project"
+output: html_document
+author: FAN Zhiyao_3036360614, GUO Shichen_3036358893, LIU Leyao_3036357851, XIANG Runze_3036361096, YU Zhixiang_3036360822
+---
+
+```{r}
+#| message: false
+#| warning: false
+set.seed(1)
+library(readxl)
+library(dplyr)
+library(gbm)
+library(openxlsx)
+train <- read_excel("training.xlsx")
+test <- read_excel("test.xlsx")
+Q1 <- quantile(train$Y, 0.25)
+Q3 <- quantile(train$Y, 0.75)
+IQR_value <- IQR(train$Y)
+
+lower_bound <- Q1 - 1.5 * IQR_value
+upper_bound <- Q3 + 1.5 * IQR_value
+
+cleaned_data <- train[train$Y >= lower_bound & train$Y <= upper_bound, ]
+```
+
+```{r}
+#| warning: false
+#| message: false
+model1 <- gbm(Y ~ ., 
+                     data = cleaned_data, 
+                     distribution = "gaussian",
+                     n.trees = 2000,
+                     interaction.depth = 10,
+                     shrinkage = 0.05,
+                     n.minobsinnode = 10, 
+                     verbose = FALSE)
+```
+
+```{r}
+summary(model1)
+```
+
+X3 and X6 have the lowest rel.inf, I will remove them from the model.
+
+```{r}
+#| warning: false
+#| message: false
+set.seed(1)
+shrinkage <- c(0.01, 0.05, 0.1)
+n.trees <- c(4000)
+interaction.depth = c(9, 10, 11)
+n.minobsinnode <- c(10, 15, 20)
+cv.folds <- c(50)
+results <- data.frame()
+for (n in n.trees) {
+  for (depth in interaction.depth) {
+    for (shrink in shrinkage) {
+      for (minobs in n.minobsinnode) {
+        for(cv.folds in cv.folds)
+        model <- gbm(Y ~ X1+X2+X4+X5+X7+X8, 
+                     data = cleaned_data, 
+                     distribution = "gaussian",
+                     n.trees = n,
+                     interaction.depth = depth,
+                     shrinkage = shrink,
+                     n.minobsinnode = minobs,
+                     cv.folds = cv.folds, 
+                     verbose = FALSE)
+        cv.error <- min(model$cv.error)
+        results <- rbind(results, 
+                         data.frame(n.trees = n, 
+                                    interaction.depth = depth, 
+                                    shrinkage = shrink, 
+                                    n.minobsinnode = minobs, 
+                                    cv.error = cv.error,
+                                    cv.folds = cv.folds))
+      }
+    }
+  }
+}
+```
+
+```{r}
+min_index <- which.min(results$cv.error)
+results[min_index, ]
+```
+
+```{r}
+set.seed(1)
+k <- 50
+n <- nrow(cleaned_data)
+folds <- sample(rep(1:k, length = n))
+MSE <- numeric(k)
+best_iter <- numeric(k)
+for (j in 1:k) {
+  train_set <- cleaned_data[folds != j, ]
+  test_set <- cleaned_data[folds == j, ]
+  model.gbm <- gbm(Y~X1+X2+X4+X5+X7+X8, data = train_set,
+               distribution = "gaussian",
+               n.trees = 4000,
+               shrinkage = 0.1,
+               interaction.depth = 9,
+               cv.folds = 50,
+               n.minobsinnode = 20,
+               verbose = FALSE)
+    best_iter[j] <- gbm.perf(model.gbm, method = "cv")
+    pred.gbm <- predict(model.gbm, test_set, n.trees = best_iter[j])
+    MSE[j] <-mean((pred.gbm-test_set$Y)^2)
+  }
+```
+
+```{r}
+mean(MSE)
+```
+
+```{r}
+mse_index <- which.min(MSE)
+overall_best_iter <- best_iter[which.min(MSE)]
+train_set1 <- cleaned_data[folds != mse_index, ]
+test_set1 <- cleaned_data[folds == mse_index, ]
+```
+
+```{r}
+set.seed(3424)
+model.test <- gbm(Y~X1+X2+X4+X5+X7+X8, data = train_set1,
+               distribution = "gaussian",
+               n.trees = overall_best_iter,
+               shrinkage = 0.1,
+               interaction.depth = 9,
+               n.minobsinnode = 20,
+               verbose = FALSE)
+ypred.test <- predict(model.test, test_set1, n.trees = overall_best_iter)
+test.MSE <- mean((ypred.test-test_set1$Y)^2)
+```
+
+```{r}
+ypred.train <- predict(model.test, train_set1, n.trees = overall_best_iter)
+train.MSE <- mean((ypred.train-train_set1$Y)^2)
+```
+
+```{r}
+# To check the problem of overfitting
+train.MSE
+test.MSE
+```
+
+```{r}
+set.seed(3424)
+model.final <- gbm(Y~X1+X2+X4+X5+X7+X8, data = cleaned_data,
+               distribution = "gaussian",
+               n.trees = overall_best_iter,
+               shrinkage = 0.1,
+               interaction.depth = 9,
+               n.minobsinnode = 20,
+               verbose = FALSE)
+ypred <- predict(model.final, test, n.trees = overall_best_iter)
+```
+
+```{r}
+test <- test %>%
+  mutate(`Y-Prediction`= ypred)
+```
+
+```{r}
+write.xlsx(test, "final_project_test.xlsx")
+```
