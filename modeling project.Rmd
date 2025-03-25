@@ -1,7 +1,7 @@
 ---
-title: "ECON 6086-Final Project"
+title: "Final Project"
 output: html_document
-author: FAN Zhiyao_3036360614, GUO Shichen_3036358893, LIU Leyao_3036357851, XIANG Runze_3036361096, YU Zhixiang_3036360822
+author:  Martin Xiang
 ---
 
 ```{r}
